@@ -1,0 +1,12 @@
+.git
+.gitignore
+.claude
+.idea
+.vscode
+onekvm-macro
+onekvm-macro.exe
+*.log
+*.md
+Dockerfile
+.dockerignore
+docker-compose*.yml

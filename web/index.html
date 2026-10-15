@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>One-KVM 通道切换</title>
+<link rel="stylesheet" href="/app.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+
+  <div id="warn-insecure" class="banner hidden">
+    当前连接不是 HTTPS，登录密码会以明文在网络中传输。请配置 TLS_CERT / TLS_KEY，
+    或在前面放一个反向代理终止 TLS。
+  </div>
+
+  <div id="login-view" class="hidden">
+    <form id="login-form" class="login-card" autocomplete="on">
+      <h1>One-KVM 通道切换</h1>
+      <p class="hint hint-flush" id="login-hint">请登录后使用。</p>
+      <div class="row">
+        <label for="login-user">用户名</label>
+        <input type="text" id="login-user" autocomplete="username" spellcheck="false">
+      </div>
+      <div class="row">
+        <label for="login-pass">密码</label>
+        <input type="password" id="login-pass" autocomplete="current-password">
+      </div>
+      <div class="row">
+        <button id="login-submit" type="submit">登录</button>
+      </div>
+      <p class="result" id="login-error"></p>
+    </form>
+  </div>
+
+  <div id="app-view" class="hidden">
+    <header>
+      <h1>One-KVM 通道切换</h1>
+      <div class="status">
+        <span><span id="s-backend" class="dot"></span>后端 <b id="s-backend-text">连接中…</b></span>
+        <span><span id="s-kvm" class="dot"></span>One-KVM <b id="s-kvm-text">未知</b></span>
+        <span>HID <b id="s-hid-text">未知</b></span>
+      </div>
+      <button id="logout" class="ghost" type="button">退出登录</button>
+    </header>
+
+    <section>
+      <h2>通道切换</h2>
+      <div class="grid" id="channels"></div>
+      <p class="hint">
+        数字键可直接切换；通道超过 9 时连按两位，例如先 <code>1</code> 再 <code>6</code> 就是通道 16。
+        <span id="chan-buffer"></span>
+      </p>
+      <p class="hint">
+        高亮的是<strong>最近一次切换到的通道</strong>，记录在服务端，所有登录的设备看到的是同一个。
+        切换器不会回报自己实际停在哪一路，所以如果你用切换器上的按钮切过，这里会过期——
+        点一下你认为正确的那一路即可重新对上。
+      </p>
+    </section>
+
+    <section>
+      <h2>切换器功能</h2>
+      <div class="fn-grid" id="functions"></div>
+      <p class="hint">
+        这些是<strong>开关型</strong>功能，切换器不会回报它们的实际状态，所以下面显示的是
+        「本服务记录到的状态」，所有登录的设备看到的是同一个。如果你用切换器面板上的按钮
+        改过，点一下「实际是」纠正即可——纠正只是改记录，不会发送任何按键。
+      </p>
+    </section>
+
+    <section>
+      <h2>热键序列</h2>
+      <div class="row">
+        <label for="preset">预设</label>
+        <select id="preset"></select>
+      </div>
+      <div class="row">
+        <label for="template">序列</label>
+        <input type="text" id="template" spellcheck="false">
+      </div>
+      <div class="row">
+        <button id="test" type="button">测试连接</button>
+        <button id="send-template" type="button">按当前模板切到</button>
+        <input type="number" id="quick-port" class="small" min="1" value="1" aria-label="通道号">
+      </div>
+      <p class="hint">
+        空格分隔每一步，<code>{port}</code> 会替换成通道号。按键名见
+        <code>ScrollLock</code>、<code>Enter</code>、<code>Numpad3</code>，数字可直接写 <code>3</code>，
+        组合键写 <code>Ctrl+Alt+Del</code>，停顿写 <code>wait:150</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>自定义宏</h2>
+      <div class="grid" id="macros"></div>
+      <div class="row row-top">
+        <button id="toggle-editor" type="button">管理宏</button>
+      </div>
+      <div id="editor" class="hidden editor"></div>
+    </section>
+
+    <section>
+      <h2>自由发送</h2>
+      <div class="row">
+        <input type="text" id="free" placeholder="例如 ScrollLock ScrollLock 2 Enter" spellcheck="false">
+        <button id="free-send" type="button">发送</button>
+      </div>
+    </section>
+
+    <section>
+      <details>
+        <summary>高级设置</summary>
+        <div class="row">
+          <label for="step-delay">步进延迟</label>
+          <input type="number" id="step-delay" class="small" min="0" max="5000" step="10">
+          <span class="hint hint-flush">毫秒，每步之间</span>
+        </div>
+        <div class="row">
+          <label for="hold">按键保持</label>
+          <input type="number" id="hold" class="small" min="5" max="2000" step="5">
+          <span class="hint hint-flush">毫秒，按下到抬起</span>
+        </div>
+        <div class="row">
+          <button id="timing-reset" class="ghost-left" type="button">恢复服务端默认</button>
+        </div>
+        <p class="hint">
+          这两项默认取自服务端的 <code>STEP_DELAY_MS</code> / <code>HOLD_MS</code>，
+          在这里改只覆盖当前这个浏览器。
+        </p>
+        <p class="hint">
+          通道数量由服务端的 <code>CHANNELS</code> 环境变量决定，不在这里设置。
+        </p>
+        <p class="hint">
+          切换器没反应时，把「步进延迟」调大（比如 200）再试，或者换用其它预设——
+          不同切换器对间隔和数字键位置的要求不一样。
+        </p>
+      </details>
+    </section>
+
+    <div class="result" id="result"></div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,6 @@
+/onekvm-macro
+/onekvm-macro.exe
+*.log
+docker-compose.yml
+.idea/
+.vscode/
