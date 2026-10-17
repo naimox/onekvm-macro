@@ -1,0 +1,98 @@
+# 示例编排文件。用法：复制成 docker-compose.yml，改掉标了「改我」的项，然后
+# docker compose up -d
+#
+# 安全提醒：这个服务能向受控机注入任意按键。如果你要把它暴露到公网，请先读
+# README 的「安全模型」一节。最重要的是启用 TLS —— 你用的是登录表单，不加密
+# 就等于把密码明文发到互联网上。
+#
+# 它是个普通网络服务：不需要 privileged、不需要挂载 /dev 或 /sys、也不需要
+# network_mode: host。它只是通过 HTTP 去连你的 One-KVM。
+
+services:
+  onekvm-macro:
+    build: .
+    # 已经把镜像推到仓库的话，改成 image: <你的仓库>/onekvm-macro:latest
+    container_name: onekvm-macro
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      # ---- 改我：One-KVM 的地址和账号 ----
+      # 填运行 One-KVM 那台机器的局域网 IP 和端口
+      ONEKVM_URL: "http://192.168.0.221:8080"
+      # 改我：One-KVM 的登录账号
+      ONEKVM_USER: "admin"
+      ONEKVM_PASSWORD: "change-me"
+
+      # 建议改用会话令牌代替账号密码：可撤销、会过期，而且不会把浏览器里的
+      # One-KVM 控制台挤下线。从浏览器 F12 → Application → Cookies 复制
+      # one_kvm_session 的值填进来。
+      # 注意：用令牌就没有账号密码可给网页登录复用了，必须同时把 AUTH_MODE
+      # 改成 manual 并设置 AUTH_PASSWORD，见下方「网页登录」。
+      # ONEKVM_SESSION: ""
+
+      # 如果 One-KVM 账户开了两步验证，填 TOTP 密钥
+      # ONEKVM_TOTP_SECRET: ""
+
+      # ---- 网页登录 ----
+      # 保持下面三行全部注释即可。默认情况下网页登录直接复用上方的
+      # ONEKVM_USER / ONEKVM_PASSWORD，这里不需要重复设置任何东西，
+      # 改 One-KVM 密码时也只改上面那一处。
+      #
+      # 只有当你想让这个服务用一个和 One-KVM 无关的独立账号时才取消注释：
+      # AUTH_MODE: "manual"
+      # AUTH_USER: "admin"
+      # AUTH_PASSWORD: "换成你自己的密码"
+
+      # 登录状态保持多久，以及登录尝试限速
+      SESSION_TTL_HOURS: "24"
+      LOGIN_RATE_LIMIT_PER_MIN: "5"
+
+      # ---- 对外暴露时最该做的一件事 ----
+
+      # 启用 HTTPS。自签证书也行，浏览器会警告但链路是加密的。
+      # 注意容器以 nobody 运行，证书文件要对它可读。
+      # TLS_CERT: "/certs/cert.pem"
+      # TLS_KEY: "/certs/key.pem"
+
+      # 可选：只允许这些来源访问，逗号分隔，支持裸 IP 和 CIDR。
+      # 回环地址始终放行（容器自身的健康检查要用）。留空表示不限制。
+      # ALLOWED_IPS: "203.0.113.0/24,198.51.100.7"
+
+      # ---- 服务自身 ----
+      PORT: "8081"
+      TZ: "Asia/Shanghai"
+
+      # 限速：全部接口每分钟上限，以及发按键接口的每分钟上限
+      RATE_LIMIT_PER_MIN: "120"
+      ACTION_RATE_LIMIT_PER_MIN: "30"
+
+      # ---- 切换器 ----
+      # 通道数量。16 口切换器就填 16；超过 9 的通道会先把十位和个位依次按下去。
+      CHANNELS: "16"
+      # 每步之间的间隔，以及按键从按下到抬起的保持时间。切换器没反应就把
+      # 步进延迟调大。网页上的「高级设置」是这里的一次性覆盖，改完只影响
+      # 那一个浏览器。
+      STEP_DELAY_MS: "100"
+      HOLD_MS: "100"
+      DEFAULT_TEMPLATE: "ScrollLock ScrollLock {port} Enter"
+
+      # 开关型功能的序列（自动扫描、蜂鸣器）。留空就自动跟着页面上选的
+      # 预设前缀走，一般不用填。切换器型号不同才需要覆盖。
+      # AUTOSCAN_TEMPLATE: "ScrollLock ScrollLock S Enter"
+      # BUZZER_TEMPLATE: "ScrollLock ScrollLock B Enter"
+
+      # ---- 可选：给自动化脚本用的令牌 ----
+      # 设了之后，脚本可以用 Authorization: Bearer <这个值> 直接调接口，
+      # 不必先登录。不用脚本的话留空即可。
+      # API_TOKEN: ""
+
+      # ---- 只在特定情况下才改 ----
+      # 放在反向代理后面时，让服务只听回环
+      # BIND_ADDR: "127.0.0.1"
+      # 只有确实有可信反代时才开，否则来源 IP 可以被伪造、限速形同虚设
+      # TRUST_PROXY: "false"
+
+    # 启用 TLS 时把证书目录挂进来
+    # volumes:
+    #   - ./certs:/certs:ro
